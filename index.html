@@ -1,0 +1,1350 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>مُحاسبة — رفيق المشارطة اليومية والمراقبة وتخلية القلب</title>
+  
+  <!-- Meta & PWA -->
+  <meta name="description" content="تطبيق إسلامي تفاعلي للمشارطة الصباحية، متابعة الصلوات والأوراد، تدبر القرآن، والسبحة الإلكترونية، والمحاسبة المسائية." />
+  <meta name="theme-color" content="#4A6B5D" />
+
+  <!-- Google Fonts: Tajawal & Amiri -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            sage: {
+              DEFAULT: '#4A6B5D',
+              light: '#EBF1ED',
+              dark: '#354E43',
+              border: '#D5E2D9'
+            },
+            cream: {
+              DEFAULT: '#FAF8F5',
+              dark: '#F0EBE3',
+              card: '#FFFFFF'
+            },
+            slate: {
+              DEFAULT: '#2D3748',
+              muted: '#718096',
+              darker: '#1A202C'
+            },
+            gold: {
+              DEFAULT: '#C5A880',
+              accent: '#B7791F',
+              light: '#FEF9EE'
+            }
+          },
+          fontFamily: {
+            sans: ['Tajawal', 'sans-serif'],
+            quran: ['Amiri', 'serif']
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- React 18, ReactDOM, and Babel -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Canvas Confetti for Celebration -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Tajawal', sans-serif;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .font-quran {
+      font-family: 'Amiri', serif;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.03);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #CBD5E0;
+      border-radius: 9999px;
+    }
+    .dark ::-webkit-scrollbar-thumb {
+      background: #4A5568;
+    }
+    @keyframes gentle-pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.03); opacity: 0.95; }
+    }
+    .animate-gentle {
+      animation: gentle-pulse 3s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-cream text-slate transition-colors duration-300 antialiased dark:bg-[#12171E] dark:text-[#E2E8F0] min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    // --- SOUND ENGINE (Web Audio API Synthesizer) ---
+    class SoundEngine {
+      static audioCtx = null;
+
+      static init() {
+        if (!this.audioCtx && typeof window !== 'undefined') {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) {
+            this.audioCtx = new AudioContext();
+          }
+        }
+      }
+
+      static playBeadClick() {
+        try {
+          this.init();
+          if (!this.audioCtx) return;
+          if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
+          
+          const osc = this.audioCtx.createOscillator();
+          const gain = this.audioCtx.createGain();
+          
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(440, this.audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(880, this.audioCtx.currentTime + 0.04);
+          
+          gain.gain.setValueAtTime(0.2, this.audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.05);
+          
+          osc.connect(gain);
+          gain.connect(this.audioCtx.destination);
+          
+          osc.start();
+          osc.stop(this.audioCtx.currentTime + 0.06);
+
+          if (navigator.vibrate) navigator.vibrate(15);
+        } catch (e) {
+          console.log('Audio error:', e);
+        }
+      }
+
+      static playNotificationChime() {
+        try {
+          this.init();
+          if (!this.audioCtx) return;
+          if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
+
+          const now = this.audioCtx.currentTime;
+          const notes = [523.25, 659.25, 783.99, 1046.50];
+
+          notes.forEach((freq, idx) => {
+            const osc = this.audioCtx.createOscillator();
+            const gain = this.audioCtx.createGain();
+            const start = now + idx * 0.12;
+
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, start);
+
+            gain.gain.setValueAtTime(0.001, start);
+            gain.gain.linearRampToValueAtTime(0.2, start + 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + 1.2);
+
+            osc.connect(gain);
+            gain.connect(this.audioCtx.destination);
+
+            osc.start(start);
+            osc.stop(start + 1.3);
+          });
+        } catch (e) {}
+      }
+    }
+
+    // --- PRESET DATA ---
+    const INTENTION_PRESETS = [
+      "إخلاص العمل لله في كل سكنة وحركة",
+      "بر الوالدين وخفض الجناح لهما",
+      "كظم الغيظ والحلم عند الغضب",
+      "حفظ الأمانة وإتقان العمل والمسؤولية",
+      "صلة الرحم وإدخال السرور على مسلم",
+      "حفظ اللسان عن كل ما لا يرضي الله"
+    ];
+
+    const SLIP_PRESETS = [
+      "الغيبة والنميمة واللغو في المجالس",
+      "إدمان الشاشات وتضييع الأوقات الثمينة",
+      "الغضب والانفعال على الأهل أو الزملاء",
+      "تأخير الصلاة عن أول وقتها",
+      "فضول النظر وإطلاق البصر في المحرمات",
+      "المنّ والأذى في العطاء"
+    ];
+
+    const DHIKR_PRESETS = [
+      { text: "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ", target: 33, virtue: "حُطّت خطاياه وإن كانت مثل زبد البحر" },
+      { text: "الْحَمْدُ لِلَّهِ", target: 33, virtue: "تملأ الميزان" },
+      { text: "اللَّهُ أَكْبَرُ", target: 34, virtue: "أحب الكلام إلى الله" },
+      { text: "لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ", target: 100, virtue: "حرز من الشيطان وعتق رقاب" },
+      { text: "أَسْتَغْفِرُ اللَّهَ الْعَظِيمَ وَأَتُوبُ إِلَيْهِ", target: 100, virtue: "مغفرة الذنوب وتفريج الكروب" },
+      { text: "اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ", target: 10, virtue: "صلى الله عليه بها عشراً" },
+      { text: "لَا حَوْلَ وَلَا قُوَّةَ إِلَّا بِاللَّهِ", target: 33, virtue: "كنز من كنوز الجنة" }
+    ];
+
+    const ADHKAR_CHECKLIST = {
+      morning: [
+        { id: 'm1', text: 'آية الكرسي والمعوذات (ثلاثاً)' },
+        { id: 'm2', text: 'أصبحنا وأصبح الملك لله، والحمد لله' },
+        { id: 'm3', text: 'اللهم بك أصبحنا وبك أمسينا وبك نحيا وبك نموت' },
+        { id: 'm4', text: 'سيد الاستغفار: اللهم أنت ربي لا إله إلا أنت' },
+        { id: 'm5', text: 'بسم الله الذي لا يضر مع اسمه شيء في الأرض ولا في السماء (ثلاثاً)' },
+        { id: 'm6', text: 'رضيت بالله رباً وبالإسلام ديناً وبمحمد ﷺ نبياً' }
+      ],
+      evening: [
+        { id: 'e1', text: 'آية الكرسي والمعوذات (ثلاثاً)' },
+        { id: 'e2', text: 'أمسينا وأمسى الملك لله' },
+        { id: 'e3', text: 'اللهم بك أمسينا وبك أصبحنا' },
+        { id: 'e4', text: 'سيد الاستغفار' },
+        { id: 'e5', text: 'أعوذ بكلمات الله التامات من شر ما خلق (ثلاثاً)' },
+        { id: 'e6', text: 'حسبي الله لا إله إلا هو عليه توكلت (سبعاً)' }
+      ],
+      sleep: [
+        { id: 's1', text: 'قراءة سورة الملك والآيتين من آخر سورة البقرة' },
+        { id: 's2', text: 'باسمك ربي وضعت جنبي وبك أرفعه' },
+        { id: 's3', text: 'تسبيح النوم (33 سبحان الله، 33 الحمد لله، 34 الله أكبر)' },
+        { id: 's4', text: 'اللهم أسلمت نفسي إليك ووجهت وجهي إليك' },
+        { id: 's5', text: 'سلامة الصدر والعفو عن كل مسلم قبل النوم' }
+      ]
+    };
+
+    const CITIES = [
+      { name: 'القاهرة، مصر', country: 'Egypt', city: 'Cairo' },
+      { name: 'مكة المكرمة، السعودية', country: 'Saudi Arabia', city: 'Makkah' },
+      { name: 'المدينة المنورة، السعودية', country: 'Saudi Arabia', city: 'Medina' },
+      { name: 'الرياض، السعودية', country: 'Saudi Arabia', city: 'Riyadh' },
+      { name: 'القدس الشريف، فلسطين', country: 'Palestine', city: 'Jerusalem' },
+      { name: 'أبوظبي، الإمارات', country: 'United Arab Emirates', city: 'Abu Dhabi' },
+      { name: 'الدوحة، قطر', country: 'Qatar', city: 'Doha' },
+      { name: 'عمان، الأردن', country: 'Jordan', city: 'Amman' },
+      { name: 'الرباط، المغرب', country: 'Morocco', city: 'Rabat' }
+    ];
+
+    function App() {
+      const [darkMode, setDarkMode] = useState(() => {
+        return localStorage.getItem('muhasabah_theme') === 'dark';
+      });
+
+      const [activeTab, setActiveTab] = useState('dashboard');
+
+      const [selectedCity, setSelectedCity] = useState(CITIES[0]);
+      const [prayerTimes, setPrayerTimes] = useState({
+        Fajr: '05:08',
+        Sunrise: '06:32',
+        Dhuhr: '12:47',
+        Asr: '16:15',
+        Maghrib: '18:59',
+        Isha: '20:18'
+      });
+      const [isLoadingPrayers, setIsLoadingPrayers] = useState(false);
+
+      const [intention, setIntention] = useState(() => {
+        return localStorage.getItem('muhasabah_intention') || 'إخلاص العمل لله وبر الوالدين وحسن الخلق';
+      });
+      const [slipToAvoid, setSlipToAvoid] = useState(() => {
+        return localStorage.getItem('muhasabah_slip') || 'فضول النظر والغيبة وضياع الوقت';
+      });
+      const [isMusharatahCommitted, setIsMusharatahCommitted] = useState(() => {
+        return localStorage.getItem('muhasabah_musharatah_done') === 'true';
+      });
+
+      const [prayersState, setPrayersState] = useState(() => {
+        const saved = localStorage.getItem('muhasabah_prayers');
+        if (saved) {
+          try { return JSON.parse(saved); } catch (e) {}
+        }
+        return {
+          fajr: { name: 'الفجر', prayed: true, onTime: true, congregation: true, rawatib: true, adhkar: true },
+          dhuhr: { name: 'الظهر', prayed: true, onTime: true, congregation: false, rawatib: true, adhkar: true },
+          asr: { name: 'العصر', prayed: false, onTime: false, congregation: false, rawatib: false, adhkar: false },
+          maghrib: { name: 'المغرب', prayed: false, onTime: false, congregation: false, rawatib: false, adhkar: false },
+          isha: { name: 'العشاء', prayed: false, onTime: false, congregation: false, rawatib: false, adhkar: false },
+          duha: { name: 'صلاة الضحى', prayed: true },
+          qiyam: { name: 'قيام الليل والوتر', prayed: false }
+        };
+      });
+
+      const [quranPages, setQuranPages] = useState(() => Number(localStorage.getItem('muhasabah_quran_pages') || 10));
+      const [juzNumber, setJuzNumber] = useState(() => Number(localStorage.getItem('muhasabah_juz') || 1));
+      const [verseRef, setVerseRef] = useState(() => localStorage.getItem('muhasabah_verse_ref') || 'سورة الفرقان: 63');
+      const [reflectionNote, setReflectionNote] = useState(() => localStorage.getItem('muhasabah_reflection') || 'وَعِبَادُ الرَّحْمَٰنِ الَّذِينَ يَمْشُونَ عَلَى الْأَرْضِ هَوْنًا.. أثر الآية: التحلي بالسكينة والتواضع في التعامل مع الناس عند الاختلاف.');
+      const [savedReflections, setSavedReflections] = useState(() => {
+        try {
+          return JSON.parse(localStorage.getItem('muhasabah_saved_reflections') || '[]');
+        } catch (e) { return []; }
+      });
+
+      const [completedAdhkar, setCompletedAdhkar] = useState(() => {
+        try {
+          return JSON.parse(localStorage.getItem('muhasabah_adhkar_checks') || '{"morning":["m1","m2"],"evening":[],"sleep":[]}');
+        } catch (e) { return { morning: [], evening: [], sleep: [] }; }
+      });
+
+      const [currentDhikrIndex, setCurrentDhikrIndex] = useState(0);
+      const [sebhaCount, setSebhaCount] = useState(() => Number(localStorage.getItem('muhasabah_sebha_count') || 0));
+      const [totalDailyTasbeeh, setTotalDailyTasbeeh] = useState(() => Number(localStorage.getItem('muhasabah_total_tasbeeh') || 120));
+
+      const [auditToggles, setAuditToggles] = useState(() => {
+        const saved = localStorage.getItem('muhasabah_audit');
+        if (saved) {
+          try { return JSON.parse(saved); } catch (e) {}
+        }
+        return {
+          tongue: true,
+          gaze: true,
+          duties: false,
+          forgiveness: true
+        };
+      });
+      const [istighfarCount, setIstighfarCount] = useState(() => Number(localStorage.getItem('muhasabah_istighfar') || 33));
+      const [isAuditFinalized, setIsAuditFinalized] = useState(() => {
+        return localStorage.getItem('muhasabah_audit_done') === 'true';
+      });
+
+      const [notifSettings, setNotifSettings] = useState(() => {
+        return {
+          fajrOffset: 15,
+          duhaTime: '08:30',
+          eveningOffset: 30,
+          bedtime: '22:30',
+          permissionGranted: (typeof Notification !== 'undefined' && Notification.permission === 'granted')
+        };
+      });
+      const [notifBannerMsg, setNotifBannerMsg] = useState(null);
+
+      useEffect(() => {
+        if (darkMode) {
+          document.documentElement.classList.add('dark');
+          localStorage.setItem('muhasabah_theme', 'dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+          localStorage.setItem('muhasabah_theme', 'light');
+        }
+      }, [darkMode]);
+
+      useEffect(() => {
+        localStorage.setItem('muhasabah_prayers', JSON.stringify(prayersState));
+      }, [prayersState]);
+
+      useEffect(() => {
+        localStorage.setItem('muhasabah_audit', JSON.stringify(auditToggles));
+      }, [auditToggles]);
+
+      useEffect(() => {
+        localStorage.setItem('muhasabah_adhkar_checks', JSON.stringify(completedAdhkar));
+      }, [completedAdhkar]);
+
+      const fetchPrayerTimes = async (cityObj) => {
+        setIsLoadingPrayers(true);
+        try {
+          const res = await fetch(`https://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(cityObj.city)}&country=${encodeURIComponent(cityObj.country)}&method=4`);
+          const data = await res.json();
+          if (data && data.data && data.data.timings) {
+            setPrayerTimes({
+              Fajr: data.data.timings.Fajr,
+              Sunrise: data.data.timings.Sunrise,
+              Dhuhr: data.data.timings.Dhuhr,
+              Asr: data.data.timings.Asr,
+              Maghrib: data.data.timings.Maghrib,
+              Isha: data.data.timings.Isha
+            });
+          }
+        } catch (err) {
+          console.warn('Falling back to default prayer calculation:', err);
+        } finally {
+          setIsLoadingPrayers(false);
+        }
+      };
+
+      useEffect(() => {
+        fetchPrayerTimes(selectedCity);
+      }, [selectedCity]);
+
+      const scoreMetrics = useMemo(() => {
+        let score = 0;
+        if (isMusharatahCommitted) score += 10;
+
+        const mainPrayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+        mainPrayers.forEach(key => {
+          const p = prayersState[key];
+          if (p.prayed) score += 4;
+          if (p.onTime) score += 2;
+          if (p.congregation) score += 1;
+          if (p.adhkar) score += 1;
+        });
+
+        if (prayersState.duha.prayed) score += 5;
+        if (prayersState.qiyam.prayed) score += 5;
+
+        if (quranPages >= 1) score += 8;
+        if (reflectionNote.trim().length > 10) score += 7;
+
+        const adhkarCount = completedAdhkar.morning.length + completedAdhkar.evening.length + completedAdhkar.sleep.length;
+        if (adhkarCount >= 3) score += 5;
+        if (adhkarCount >= 8) score += 5;
+
+        const auditCheckedCount = Object.values(auditToggles).filter(Boolean).length;
+        score += Math.min(15, auditCheckedCount * 4);
+
+        return Math.min(100, Math.round(score));
+      }, [isMusharatahCommitted, prayersState, quranPages, reflectionNote, completedAdhkar, auditToggles]);
+
+      const handleSebhaClick = () => {
+        SoundEngine.playBeadClick();
+        const curDhikr = DHIKR_PRESETS[currentDhikrIndex];
+        const next = sebhaCount + 1;
+        setSebhaCount(next);
+        setTotalDailyTasbeeh(prev => prev + 1);
+        localStorage.setItem('muhasabah_sebha_count', next.toString());
+        localStorage.setItem('muhasabah_total_tasbeeh', (totalDailyTasbeeh + 1).toString());
+
+        if (next === curDhikr.target) {
+          if (typeof confetti === 'function') {
+            confetti({
+              particleCount: 50,
+              spread: 60,
+              origin: { y: 0.7 }
+            });
+          }
+        }
+      };
+
+      const resetSebha = () => {
+        setSebhaCount(0);
+        localStorage.setItem('muhasabah_sebha_count', '0');
+      };
+
+      const togglePrayerSubProp = (prayerKey, propKey) => {
+        setPrayersState(prev => ({
+          ...prev,
+          [prayerKey]: {
+            ...prev[prayerKey],
+            [propKey]: !prev[prayerKey][propKey]
+          }
+        }));
+      };
+
+      const toggleAdhkarItem = (category, id) => {
+        setCompletedAdhkar(prev => {
+          const list = prev[category] || [];
+          const exists = list.includes(id);
+          const next = exists ? list.filter(x => x !== id) : [...list, id];
+          return { ...prev, [category]: next };
+        });
+      };
+
+      const handleSaveReflection = () => {
+        if (!verseRef.trim()) return;
+        const newEntry = {
+          id: Date.now(),
+          date: new Date().toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+          verse: verseRef,
+          pages: quranPages,
+          reflection: reflectionNote
+        };
+        const nextList = [newEntry, ...savedReflections.slice(0, 19)];
+        setSavedReflections(nextList);
+        localStorage.setItem('muhasabah_saved_reflections', JSON.stringify(nextList));
+        localStorage.setItem('muhasabah_verse_ref', verseRef);
+        localStorage.setItem('muhasabah_reflection', reflectionNote);
+        localStorage.setItem('muhasabah_quran_pages', quranPages.toString());
+        alert('تم حفظ تدبر اليوم في سجلك الإيماني بنجاح ✨');
+      };
+
+      const requestNotificationAccess = async () => {
+        if (!('Notification' in window)) {
+          alert('متصفحك لا يدعم الإشعارات المباشرة.');
+          return;
+        }
+        const perm = await Notification.requestPermission();
+        if (perm === 'granted') {
+          setNotifSettings(prev => ({ ...prev, permissionGranted: true }));
+          SoundEngine.playNotificationChime();
+          new Notification('مُحاسبة — رفيقك الإيماني 🌙', {
+            body: 'تم تفعيل التنبيهات المباركة بنجاح. سنذكرك بالمشارطة، الأوراد، والمحاسبة.',
+            icon: 'https://cdn-icons-png.flaticon.com/512/3247/3247477.png'
+          });
+        }
+      };
+
+      const triggerTestNotification = () => {
+        SoundEngine.playNotificationChime();
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('تنبيه المحاسبة المسائية 🌙', {
+            body: 'لحظة سكون.. حاسب نفسك قبل أن تُحاسب، اعفُ عمن أساء إليك ونَم بقلبٍ سليم.',
+            icon: 'https://cdn-icons-png.flaticon.com/512/3247/3247477.png'
+          });
+        } else {
+          setNotifBannerMsg('تم تشغيل نغمة التنبيه الهادئة! (قم بالسماح بالإشعارات في المتصفح لظهور الرسالة).');
+          setTimeout(() => setNotifBannerMsg(null), 4500);
+        }
+      };
+
+      return (
+        <div className="max-w-4xl mx-auto px-4 py-6 md:py-10">
+          
+          {/* TOP BAR */}
+          <header className="flex flex-col md:flex-row md:items-center justify-between pb-6 mb-6 border-b border-cream-dark dark:border-gray-800 gap-4">
+            <div className="flex items-center space-x-3 space-x-reverse">
+              <div className="w-12 h-12 rounded-2xl bg-sage text-white flex items-center justify-center shadow-md shadow-sage/20 text-2xl font-bold">
+                مـ
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-extrabold tracking-tight text-slate dark:text-white">مُحاسَـبَة</h1>
+                  <span className="text-[11px] bg-sage-light text-sage px-2.5 py-0.5 rounded-full font-bold border border-sage-border dark:bg-sage-dark dark:text-cream">
+                    المشارطة والمراقبة
+                  </span>
+                </div>
+                <p className="text-xs text-slate-muted dark:text-gray-400 mt-0.5">
+                  منهج السلف في محاسبة النفس، تجديد النية، وسلامة الصدر قبل المنام
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <select
+                aria-label="اختر مدينتك لمواقيت الصلاة"
+                value={selectedCity.city}
+                onChange={(e) => {
+                  const c = CITIES.find(item => item.city === e.target.value);
+                  if (c) setSelectedCity(c);
+                }}
+                className="bg-white dark:bg-gray-800 text-xs text-slate dark:text-gray-200 border border-cream-dark dark:border-gray-700 px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-sage/40"
+              >
+                {CITIES.map(c => (
+                  <option key={c.city} value={c.city}>{c.name}</option>
+                ))}
+              </select>
+
+              <button
+                onClick={() => setDarkMode(!darkMode)}
+                className="p-2 rounded-xl bg-white dark:bg-gray-800 border border-cream-dark dark:border-gray-700 text-slate dark:text-yellow-400 hover:bg-cream-dark transition"
+                title="تبديل الوضع الليلي"
+              >
+                {darkMode ? '☀️' : '🌙'}
+              </button>
+
+              <button
+                onClick={triggerTestNotification}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-sage text-white hover:bg-sage-dark transition shadow-sm"
+              >
+                <span>🔔</span>
+                <span className="hidden sm:inline">تجربة نغمة التنبيه</span>
+              </button>
+            </div>
+          </header>
+
+          {notifBannerMsg && (
+            <div className="mb-5 bg-gold-light border border-gold/40 text-gold-accent p-3 rounded-2xl text-xs flex items-center justify-between animate-gentle">
+              <span>{notifBannerMsg}</span>
+              <button onClick={() => setNotifBannerMsg(null)} className="font-bold text-sm mr-2">✕</button>
+            </div>
+          )}
+
+          {/* HERO CARD */}
+          <div className="bg-gradient-to-br from-sage to-sage-dark text-white rounded-3xl p-6 mb-8 shadow-lg shadow-sage/15 relative overflow-hidden">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-xs bg-white/20 px-2.5 py-0.5 rounded-full font-bold">
+                    اليوم {new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}
+                  </span>
+                  <span className="text-xs text-cream/80">
+                    {scoreMetrics >= 80 ? '🌱 يوم مبارك ومُثمر' : scoreMetrics >= 50 ? '🌾 في مسار الاستقامة' : '🌿 جدّد نيتك واستأنف'}
+                  </span>
+                </div>
+                <h2 className="text-2xl font-bold font-quran leading-relaxed">
+                  "حَاسِبُوا أَنْفُسَكُمْ قَبْلَ أَنْ تُحَاسَبُوا، وَزِنُوهَا قَبْلَ أَنْ تُوزَنُوا"
+                </h2>
+                <p className="text-xs text-cream/90 mt-1">
+                  عمر بن الخطاب رضي الله عنه — اجعل لقلبك ميزاناً كل ليلة ونَم بسلامة صدر وتوبة صادقة.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-4 bg-white/10 backdrop-blur-md px-5 py-4 rounded-2xl border border-white/20 self-start md:self-auto">
+                <div className="relative w-16 h-16 flex items-center justify-center">
+                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                    <path
+                      className="text-white/20"
+                      strokeWidth="3.5"
+                      stroke="currentColor"
+                      fill="none"
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    />
+                    <path
+                      className="text-gold"
+                      strokeDasharray={`${scoreMetrics}, 100`}
+                      strokeWidth="3.5"
+                      strokeLinecap="round"
+                      stroke="currentColor"
+                      fill="none"
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    />
+                  </svg>
+                  <span className="absolute text-sm font-extrabold text-white">{scoreMetrics}%</span>
+                </div>
+                <div>
+                  <div className="text-xs text-cream/80">رصيد الاستقامة اليومي</div>
+                  <div className="text-sm font-bold mt-0.5">
+                    {scoreMetrics === 100 ? 'تمت المحاسبة بالكامل 👑' : `${scoreMetrics} من 100 نقطة`}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-5 border-t border-white/15">
+              <div className="bg-white/10 rounded-xl p-2.5 text-center">
+                <div className="text-[11px] text-cream/80">الصلوات المكتوبة</div>
+                <div className="text-base font-bold mt-0.5">
+                  {Object.values(prayersState).slice(0, 5).filter(p => p.prayed).length} / 5
+                </div>
+              </div>
+              <div className="bg-white/10 rounded-xl p-2.5 text-center">
+                <div className="text-[11px] text-cream/80">صفحات القرآن</div>
+                <div className="text-base font-bold mt-0.5">{quranPages} ص</div>
+              </div>
+              <div className="bg-white/10 rounded-xl p-2.5 text-center">
+                <div className="text-[11px] text-cream/80">التسبيح والذكر</div>
+                <div className="text-base font-bold mt-0.5">{totalDailyTasbeeh}</div>
+              </div>
+              <div className="bg-white/10 rounded-xl p-2.5 text-center">
+                <div className="text-[11px] text-cream/80">المحاسبة المسائية</div>
+                <div className="text-base font-bold mt-0.5">
+                  {isAuditFinalized ? 'مكتملة ✓' : 'في الانتظار'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* NAVIGATION TABS */}
+          <div className="flex items-center space-x-2 space-x-reverse overflow-x-auto pb-3 mb-6">
+            {[
+              { id: 'dashboard', label: 'لوحة اليوم', icon: '🌿' },
+              { id: 'musharatah', label: 'المشارطة والنية', icon: '🌅' },
+              { id: 'prayers', label: 'الصلوات والأوراد', icon: '🕌' },
+              { id: 'quran', label: 'القرآن والتدبر', icon: '📖' },
+              { id: 'tasbeeh', label: 'السبحة والأذكار', icon: '📿' },
+              { id: 'muhasabah', label: 'المحاسبة وتخلية القلب', icon: '🌙' },
+              { id: 'notifications', label: 'التنبيهات الذكية', icon: '⏰' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all duration-200 border ${
+                  activeTab === tab.id
+                    ? 'bg-sage text-white border-sage shadow-sm shadow-sage/30 scale-100'
+                    : 'bg-white dark:bg-gray-800 text-slate-muted dark:text-gray-300 border-cream-dark dark:border-gray-700 hover:border-sage'
+                }`}
+              >
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* TAB 1: MUSHARTAH */}
+          {(activeTab === 'musharatah' || activeTab === 'dashboard') && (
+            <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 mb-6 shadow-sm border border-cream-dark dark:border-gray-700">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gold-light text-gold-accent flex items-center justify-center text-lg">
+                    🌅
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate dark:text-white">المشارطة الصباحية (عزم اليوم)</h3>
+                    <p className="text-xs text-slate-muted dark:text-gray-400">
+                      حدد نيتك التي تبتغي بها وجه الله، وعيّن الزلة التي تلتزم باجتنابها نهارك
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = !isMusharatahCommitted;
+                    setIsMusharatahCommitted(next);
+                    localStorage.setItem('muhasabah_musharatah_done', next ? 'true' : 'false');
+                    if (next && typeof confetti === 'function') confetti({ particleCount: 30 });
+                  }}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                    isMusharatahCommitted
+                      ? 'bg-sage-light text-sage border border-sage-border dark:bg-sage-dark dark:text-cream'
+                      : 'bg-sage text-white hover:bg-sage-dark'
+                  }`}
+                >
+                  <span>{isMusharatahCommitted ? 'تم عقد العزم اليوم ✓' : 'اعقد العزم الآن'}</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4">
+                <div className="bg-cream dark:bg-gray-900/60 p-4 rounded-2xl border border-cream-dark dark:border-gray-700/60">
+                  <label className="block text-xs font-bold text-slate dark:text-gray-300 mb-2">
+                    🎯 نية اليوم الصالحة (المشارطة على الطاعة):
+                  </label>
+                  <input
+                    type="text"
+                    value={intention}
+                    onChange={(e) => {
+                      setIntention(e.target.value);
+                      localStorage.setItem('muhasabah_intention', e.target.value);
+                    }}
+                    placeholder="اكتب نيتك لهذا اليوم..."
+                    className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3.5 py-2.5 text-xs text-slate dark:text-white focus:outline-none focus:ring-2 focus:ring-sage/40"
+                  />
+                  <div className="flex flex-wrap gap-1.5 mt-2.5">
+                    {INTENTION_PRESETS.slice(0, 3).map((preset, i) => (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          setIntention(preset);
+                          localStorage.setItem('muhasabah_intention', preset);
+                        }}
+                        className="text-[10px] bg-white dark:bg-gray-800 text-slate-muted dark:text-gray-300 border border-gray-200 dark:border-gray-700 px-2 py-1 rounded-lg hover:border-sage"
+                      >
+                        + {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-cream dark:bg-gray-900/60 p-4 rounded-2xl border border-cream-dark dark:border-gray-700/60">
+                  <label className="block text-xs font-bold text-red-600 dark:text-red-400 mb-2">
+                    🛡️ زلة أو خلق تعزم على اجتنابه ومراقبته اليوم:
+                  </label>
+                  <input
+                    type="text"
+                    value={slipToAvoid}
+                    onChange={(e) => {
+                      setSlipToAvoid(e.target.value);
+                      localStorage.setItem('muhasabah_slip', e.target.value);
+                    }}
+                    placeholder="ما الذي تحذر نفسك منه اليوم؟"
+                    className="w-full bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900/50 rounded-xl px-3.5 py-2.5 text-xs text-slate dark:text-white focus:outline-none focus:ring-2 focus:ring-red-400/40"
+                  />
+                  <div className="flex flex-wrap gap-1.5 mt-2.5">
+                    {SLIP_PRESETS.slice(0, 3).map((preset, i) => (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          setSlipToAvoid(preset);
+                          localStorage.setItem('muhasabah_slip', preset);
+                        }}
+                        className="text-[10px] bg-white dark:bg-gray-800 text-slate-muted dark:text-gray-300 border border-gray-200 dark:border-gray-700 px-2 py-1 rounded-lg hover:border-red-400"
+                      >
+                        + {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: PRAYERS */}
+          {(activeTab === 'prayers' || activeTab === 'dashboard') && (
+            <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 mb-6 shadow-sm border border-cream-dark dark:border-gray-700">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-4 border-b border-cream-dark dark:border-gray-700 gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-sage-light text-sage flex items-center justify-center text-lg dark:bg-sage-dark dark:text-cream">
+                    🕌
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate dark:text-white">الصلوات الخمس والسنن الرواتب</h3>
+                    <p className="text-xs text-slate-muted dark:text-gray-400">
+                      مواقيت اليوم لمدينة {selectedCity.name} {isLoadingPrayers && '(جاري التحديث...)'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => togglePrayerSubProp('duha', 'prayed')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                      prayersState.duha.prayed
+                        ? 'bg-gold-light border-gold text-gold-accent dark:bg-yellow-950 dark:border-yellow-700 dark:text-yellow-300'
+                        : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-slate-muted'
+                    }`}
+                  >
+                    {prayersState.duha.prayed ? '✓ صليت الضحى' : 'صلاة الضحى'}
+                  </button>
+                  <button
+                    onClick={() => togglePrayerSubProp('qiyam', 'prayed')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                      prayersState.qiyam.prayed
+                        ? 'bg-slate text-white border-slate dark:bg-indigo-900 dark:border-indigo-700'
+                        : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-slate-muted'
+                    }`}
+                  >
+                    {prayersState.qiyam.prayed ? '✓ قيام الليل والوتر' : 'قيام الليل والوتر'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {[
+                  { key: 'fajr', time: prayerTimes.Fajr },
+                  { key: 'dhuhr', time: prayerTimes.Dhuhr },
+                  { key: 'asr', time: prayerTimes.Asr },
+                  { key: 'maghrib', time: prayerTimes.Maghrib },
+                  { key: 'isha', time: prayerTimes.Isha }
+                ].map(({ key, time }) => {
+                  const p = prayersState[key];
+                  return (
+                    <div
+                      key={key}
+                      className={`flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-2xl border transition ${
+                        p.prayed
+                          ? 'bg-cream/70 dark:bg-gray-900/40 border-sage/40'
+                          : 'bg-white dark:bg-gray-800 border-cream-dark dark:border-gray-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between sm:justify-start gap-3">
+                        <button
+                          onClick={() => togglePrayerSubProp(key, 'prayed')}
+                          className={`w-7 h-7 rounded-xl flex items-center justify-center border transition ${
+                            p.prayed
+                              ? 'bg-sage border-sage text-white shadow-sm'
+                              : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700'
+                          }`}
+                        >
+                          {p.prayed && <span className="text-xs font-bold">✓</span>}
+                        </button>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-slate dark:text-white">{p.name}</span>
+                            <span className="text-[11px] text-slate-muted font-mono dark:text-gray-400">({time})</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 mt-2.5 sm:mt-0 flex-wrap">
+                        <button
+                          onClick={() => togglePrayerSubProp(key, 'onTime')}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition ${
+                            p.onTime
+                              ? 'bg-sage-light text-sage border-sage-border dark:bg-sage-dark dark:text-cream'
+                              : 'bg-white dark:bg-gray-800 text-gray-400 border-gray-200 dark:border-gray-700'
+                          }`}
+                        >
+                          في وقتها
+                        </button>
+                        <button
+                          onClick={() => togglePrayerSubProp(key, 'congregation')}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition ${
+                            p.congregation
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300'
+                              : 'bg-white dark:bg-gray-800 text-gray-400 border-gray-200 dark:border-gray-700'
+                          }`}
+                        >
+                          جماعة
+                        </button>
+                        <button
+                          onClick={() => togglePrayerSubProp(key, 'rawatib')}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition ${
+                            p.rawatib
+                              ? 'bg-gold-light text-gold-accent border-gold/40 dark:bg-yellow-950 dark:text-yellow-300'
+                              : 'bg-white dark:bg-gray-800 text-gray-400 border-gray-200 dark:border-gray-700'
+                          }`}
+                        >
+                          السنن الرواتب
+                        </button>
+                        <button
+                          onClick={() => togglePrayerSubProp(key, 'adhkar')}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition ${
+                            p.adhkar
+                              ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300'
+                              : 'bg-white dark:bg-gray-800 text-gray-400 border-gray-200 dark:border-gray-700'
+                          }`}
+                        >
+                          أذكار الصلاة
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: QURAN */}
+          {(activeTab === 'quran' || activeTab === 'dashboard') && (
+            <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 mb-6 shadow-sm border border-cream-dark dark:border-gray-700">
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-cream-dark dark:border-gray-700">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gold-light text-gold-accent flex items-center justify-center text-lg">
+                    📖
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate dark:text-white">الورد القرآني وتدبر آية</h3>
+                    <p className="text-xs text-slate-muted dark:text-gray-400">
+                      قراءة بتؤدة مع استخراج معنى عملي يُصلح القلب والسلوك
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 bg-cream dark:bg-gray-900 px-3 py-1.5 rounded-xl border border-cream-dark dark:border-gray-700">
+                  <span className="text-xs text-slate-muted dark:text-gray-400">الصفحات:</span>
+                  <button
+                    onClick={() => setQuranPages(Math.max(0, quranPages - 1))}
+                    className="w-5 h-5 rounded bg-white dark:bg-gray-800 text-xs font-bold text-slate dark:text-white flex items-center justify-center shadow-xs"
+                  >
+                    -
+                  </button>
+                  <span className="text-sm font-extrabold text-sage px-1">{quranPages}</span>
+                  <button
+                    onClick={() => setQuranPages(quranPages + 1)}
+                    className="w-5 h-5 rounded bg-white dark:bg-gray-800 text-xs font-bold text-slate dark:text-white flex items-center justify-center shadow-xs"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-cream dark:bg-gray-900/60 p-4 rounded-2xl border border-cream-dark dark:border-gray-700">
+                <div className="flex flex-col sm:flex-row gap-3 mb-3">
+                  <div className="flex-1">
+                    <label className="block text-[11px] font-bold text-slate dark:text-gray-300 mb-1">
+                      الآية التي استوقفتك اليوم (السورة ورقم الآية):
+                    </label>
+                    <input
+                      type="text"
+                      value={verseRef}
+                      onChange={(e) => setVerseRef(e.target.value)}
+                      placeholder="مثال: سورة الحجرات: 12"
+                      className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-xs font-bold text-gold-accent focus:outline-none focus:ring-2 focus:ring-gold/40"
+                    />
+                  </div>
+                  <div className="w-full sm:w-36">
+                    <label className="block text-[11px] font-bold text-slate dark:text-gray-300 mb-1">
+                      الجزء:
+                    </label>
+                    <select
+                      value={juzNumber}
+                      onChange={(e) => setJuzNumber(Number(e.target.value))}
+                      className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-xs text-slate dark:text-white focus:outline-none"
+                    >
+                      {Array.from({ length: 30 }, (_, i) => (
+                        <option key={i + 1} value={i + 1}>الجزء {i + 1}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="mb-3">
+                  <label className="block text-[11px] font-bold text-slate dark:text-gray-300 mb-1">
+                    الأثر الإيماني والتطبيق العملي في يومك:
+                  </label>
+                  <textarea
+                    rows="2"
+                    value={reflectionNote}
+                    onChange={(e) => setReflectionNote(e.target.value)}
+                    placeholder="كيف ستغير هذه الآية من تصرفاتك وأفكارك اليوم؟"
+                    className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-xs text-slate dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-sage/40 leading-relaxed"
+                  />
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveReflection}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-sage text-white hover:bg-sage-dark transition shadow-sm"
+                  >
+                    حفظ في سجل التدبر ✨
+                  </button>
+                </div>
+              </div>
+
+              {savedReflections.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-cream-dark dark:border-gray-700">
+                  <h4 className="text-xs font-bold text-slate-muted dark:text-gray-400 mb-2">من تدبراتك السابقة:</h4>
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {savedReflections.slice(0, 3).map(item => (
+                      <div key={item.id} className="p-2.5 bg-cream/40 dark:bg-gray-900/30 rounded-xl text-xs border border-cream-dark dark:border-gray-800">
+                        <div className="flex justify-between text-gold-accent font-bold text-[11px]">
+                          <span>{item.verse}</span>
+                          <span className="text-gray-400 text-[10px]">{item.date}</span>
+                        </div>
+                        <p className="text-slate-muted dark:text-gray-300 mt-1 line-clamp-2">{item.reflection}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 4: TASBEEH */}
+          {(activeTab === 'tasbeeh' || activeTab === 'dashboard') && (
+            <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 mb-6 shadow-sm border border-cream-dark dark:border-gray-700">
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-cream-dark dark:border-gray-700">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-sage-light text-sage flex items-center justify-center text-lg dark:bg-sage-dark dark:text-cream">
+                    📿
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate dark:text-white">السبحة الرقمية وحصن الأذكار</h3>
+                    <p className="text-xs text-slate-muted dark:text-gray-400">
+                      ذكرٌ لا ينقطع بصوت هادئ ومظهر مريح للنفس
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-xs font-bold text-slate dark:text-gray-300 bg-cream dark:bg-gray-900 px-3 py-1.5 rounded-xl">
+                  مجموع التسبيح اليوم: <span className="text-sage font-extrabold">{totalDailyTasbeeh}</span>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-b from-cream to-[#F4EFEA] dark:from-gray-900 dark:to-gray-900/80 p-6 rounded-3xl border border-cream-dark dark:border-gray-700 text-center mb-6">
+                <div className="mb-4">
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <button
+                      onClick={() => {
+                        const idx = (currentDhikrIndex - 1 + DHIKR_PRESETS.length) % DHIKR_PRESETS.length;
+                        setCurrentDhikrIndex(idx);
+                        resetSebha();
+                      }}
+                      className="p-1.5 rounded-full hover:bg-white dark:hover:bg-gray-800 text-slate-muted"
+                    >
+                      ‹
+                    </button>
+                    <span className="text-lg font-bold font-quran text-slate dark:text-white px-3 py-1 bg-white dark:bg-gray-800 rounded-xl shadow-xs border border-cream-dark dark:border-gray-700">
+                      {DHIKR_PRESETS[currentDhikrIndex].text}
+                    </span>
+                    <button
+                      onClick={() => {
+                        const idx = (currentDhikrIndex + 1) % DHIKR_PRESETS.length;
+                        setCurrentDhikrIndex(idx);
+                        resetSebha();
+                      }}
+                      className="p-1.5 rounded-full hover:bg-white dark:hover:bg-gray-800 text-slate-muted"
+                    >
+                      ›
+                    </button>
+                  </div>
+                  <div className="text-[11px] text-slate-muted dark:text-gray-400">
+                    فضل الذكر: {DHIKR_PRESETS[currentDhikrIndex].virtue}
+                  </div>
+                </div>
+
+                <div className="my-6 flex justify-center">
+                  <button
+                    onClick={handleSebhaClick}
+                    className="w-44 h-44 rounded-full bg-sage hover:bg-sage-dark active:scale-95 text-white shadow-xl shadow-sage/30 flex flex-col items-center justify-center transition-transform duration-100 border-4 border-white dark:border-gray-800 relative select-none"
+                  >
+                    <span className="text-4xl font-extrabold font-mono tracking-wider">{sebhaCount}</span>
+                    <span className="text-xs text-cream/80 mt-1">
+                      الهدف: {DHIKR_PRESETS[currentDhikrIndex].target}
+                    </span>
+                    <div className="absolute bottom-4 text-[10px] text-cream/70">انقر للعد</div>
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    onClick={resetSebha}
+                    className="px-3.5 py-1.5 text-xs text-slate-muted dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:text-red-500 transition"
+                  >
+                    تصفير العداد ⟲
+                  </button>
+                  <button
+                    onClick={() => SoundEngine.playBeadClick()}
+                    className="px-3.5 py-1.5 text-xs text-slate-muted dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700"
+                  >
+                    صوت الخرز 🔊
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  { key: 'morning', title: 'أذكار الصباح', icon: '🌅', color: 'border-yellow-200 dark:border-yellow-900/40' },
+                  { key: 'evening', title: 'أذكار المساء', icon: '🌇', color: 'border-orange-200 dark:border-orange-900/40' },
+                  { key: 'sleep', title: 'أذكار النوم والعفو', icon: '🌙', color: 'border-indigo-200 dark:border-indigo-900/40' }
+                ].map(cat => (
+                  <div key={cat.key} className={`bg-cream/70 dark:bg-gray-900/50 p-4 rounded-2xl border ${cat.color}`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-1.5">
+                        <span>{cat.icon}</span>
+                        <span className="text-xs font-bold text-slate dark:text-white">{cat.title}</span>
+                      </div>
+                      <span className="text-[10px] text-slate-muted">
+                        {completedAdhkar[cat.key].length} / {ADHKAR_CHECKLIST[cat.key].length}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {ADHKAR_CHECKLIST[cat.key].map(item => {
+                        const checked = completedAdhkar[cat.key].includes(item.id);
+                        return (
+                          <div
+                            key={item.id}
+                            onClick={() => toggleAdhkarItem(cat.key, item.id)}
+                            className="flex items-start gap-2 cursor-pointer p-1.5 rounded-lg hover:bg-white/70 dark:hover:bg-gray-800/70 transition text-right"
+                          >
+                            <div className={`w-4 h-4 mt-0.5 rounded flex items-center justify-center text-[10px] border shrink-0 ${
+                              checked ? 'bg-sage border-sage text-white' : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700'
+                            }`}>
+                              {checked && '✓'}
+                            </div>
+                            <span className={`text-[11px] leading-4 select-none ${
+                              checked ? 'text-gray-400 line-through' : 'text-slate dark:text-gray-200'
+                            }`}>
+                              {item.text}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: MUHASABAH */}
+          {(activeTab === 'muhasabah' || activeTab === 'dashboard') && (
+            <div className="bg-[#1E2633] text-white rounded-3xl p-6 mb-6 shadow-xl border border-gray-700">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-4 border-b border-gray-700 gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-900/60 text-yellow-300 flex items-center justify-center text-lg border border-indigo-700">
+                    🌙
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">المحاسبة المسائية وتخلية القلب</h3>
+                    <p className="text-xs text-gray-400">
+                      قف مع نفسك 3 دقائق قبل النوم لتنام بقلبٍ سليم موصول بالله
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-xs bg-gray-800 px-3 py-1.5 rounded-xl border border-gray-700 text-gold">
+                  خلوة ما قبل النوم
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-5">
+                {[
+                  {
+                    key: 'tongue',
+                    title: 'حفظ اللسان من اللغو والغيبة',
+                    sub: 'هل عصمت لسانك اليوم من الغيبة، النميمة، وفضول الكلام الذي لا فائدة منه؟',
+                    icon: '🗣️'
+                  },
+                  {
+                    key: 'gaze',
+                    title: 'غض البصر وحفظ الجوارح',
+                    sub: 'هل حفظت بصرك وسمعك عن المشاهد الحرام وما لا يحل لك في الواقع والشاشات؟',
+                    icon: '👁️'
+                  },
+                  {
+                    key: 'duties',
+                    title: 'أداء الأمانة وإتقان العمل',
+                    sub: 'هل أديت عملك وواجباتك بصدق ونزاهة وإتقان دون تهاون أو تفريط؟',
+                    icon: '⚖️'
+                  },
+                  {
+                    key: 'forgiveness',
+                    title: 'سلامة الصدر والعفو عن الناس',
+                    sub: 'هل عفوت عمن ظلمك أو أساء إليك لتبيت الليلة بقلب نقي لا غل فيه لأحد؟',
+                    icon: '🤍'
+                  }
+                ].map(item => {
+                  const active = auditToggles[item.key];
+                  return (
+                    <div
+                      key={item.key}
+                      onClick={() => setAuditToggles(prev => ({ ...prev, [item.key]: !prev[item.key] }))}
+                      className={`cursor-pointer p-4 rounded-2xl border transition-all duration-200 flex items-start justify-between gap-3 ${
+                        active
+                          ? 'bg-sage/20 border-sage text-white'
+                          : 'bg-gray-800/60 border-gray-700 hover:border-gray-600 text-gray-300'
+                      }`}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span>{item.icon}</span>
+                          <h4 className="text-xs font-bold text-white">{item.title}</h4>
+                        </div>
+                        <p className="text-[11px] text-gray-400 leading-relaxed">{item.sub}</p>
+                      </div>
+
+                      <div className={`w-10 h-6 rounded-full p-1 transition-colors duration-200 flex items-center shrink-0 ${
+                        active ? 'bg-sage justify-end' : 'bg-gray-700 justify-start'
+                      }`}>
+                        <div className="w-4 h-4 rounded-full bg-white shadow-md"></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="bg-gray-900/80 p-4 rounded-2xl border border-gray-800 flex flex-col sm:flex-row items-center justify-between gap-4 mt-4">
+                <div className="text-center sm:text-right">
+                  <div className="text-xs font-bold text-white mb-0.5">استغفار الختام وتجديد التوبة:</div>
+                  <div className="text-sm font-quran text-gold">"أَسْتَغْفِرُ اللَّهَ الْعَظِيمَ الَّذِي لَا إِلَهَ إِلَّا هُوَ الْحَيَّ الْقَيُّومَ وَأَتُوبُ إِلَيْهِ"</div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      SoundEngine.playBeadClick();
+                      const n = istighfarCount + 1;
+                      setIstighfarCount(n);
+                      localStorage.setItem('muhasabah_istighfar', n.toString());
+                    }}
+                    className="px-4 py-2 bg-sage hover:bg-sage-dark text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm"
+                  >
+                    <span>استغفار</span>
+                    <span className="bg-white/20 px-2 py-0.5 rounded-md font-mono">{istighfarCount}</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setIsAuditFinalized(true);
+                      localStorage.setItem('muhasabah_audit_done', 'true');
+                      if (typeof confetti === 'function') {
+                        confetti({
+                          particleCount: 70,
+                          spread: 80,
+                          origin: { y: 0.6 }
+                        });
+                      }
+                      alert('تقبل الله منك.. نم بقلب سليم، غفر الله لك ما تقدم من ذنبك 🌙');
+                    }}
+                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition border border-white/10"
+                  >
+                    ختم المحاسبة المسائية ✓
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: NOTIFICATIONS */}
+          {(activeTab === 'notifications') && (
+            <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 mb-6 shadow-sm border border-cream-dark dark:border-gray-700">
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-cream-dark dark:border-gray-700">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-sage-light text-sage flex items-center justify-center text-lg dark:bg-sage-dark dark:text-cream">
+                    ⏰
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate dark:text-white">نظام التنبيهات الإيمانية الذكي</h3>
+                    <p className="text-xs text-slate-muted dark:text-gray-400">
+                      مواقيت دقيقة مرتبطة بمواعيد الصلاة وشروق الشمس والنوم
+                    </p>
+                  </div>
+                </div>
+
+                {!notifSettings.permissionGranted && (
+                  <button
+                    onClick={requestNotificationAccess}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-sage text-white hover:bg-sage-dark transition shadow-sm"
+                  >
+                    تفعيل إشعارات المتصفح 🔔
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                {[
+                  {
+                    title: 'المشارطة الصباحية (بعد الفجر بـ 15 دقيقة)',
+                    text: 'ابدأ يومك بالمشارطة وتحديد نية اليوم وما تعزم على تجنبه.',
+                    time: `تقريباً ${prayerTimes.Fajr} + 15د`,
+                    icon: '🌅'
+                  },
+                  {
+                    title: 'زاد الضحى وأذكار الصباح',
+                    text: 'ركعتا الضحى وأذكار الصباح حصنك الحصين.',
+                    time: '08:30 صباحاً',
+                    icon: '☀️'
+                  },
+                  {
+                    title: 'أذكار المساء وورد القرآن وتدبر آية',
+                    text: 'أقبل المساء.. رطب لسانك بالذكر واستفتح مصحفك بتدبر آية.',
+                    time: `عند وقت العصر (${prayerTimes.Asr})`,
+                    icon: '📖'
+                  },
+                  {
+                    title: 'المحاسبة المسائية وتخلية القلب (قبل النوم)',
+                    text: 'لحظة سكون.. حاسب نفسك قبل أن تُحاسب، اعفُ عمن ظلمك ونم بقلب سليم.',
+                    time: '10:30 مساءً',
+                    icon: '🌙'
+                  }
+                ].map((slot, i) => (
+                  <div key={i} className="flex items-center justify-between p-4 rounded-2xl bg-cream dark:bg-gray-900/60 border border-cream-dark dark:border-gray-700">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">{slot.icon}</span>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate dark:text-white">{slot.title}</h4>
+                        <p className="text-[11px] text-slate-muted dark:text-gray-400 mt-0.5">"{slot.text}"</p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-mono font-bold text-sage bg-white dark:bg-gray-800 px-2.5 py-1 rounded-lg border border-cream-dark dark:border-gray-700">
+                      {slot.time}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={triggerTestNotification}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-slate dark:bg-gray-700 text-white hover:bg-slate-darker transition flex items-center gap-2"
+                >
+                  <span>🔊 تجربة إشعار فوري بصوت هادئ</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* FOOTER */}
+          <footer className="pt-8 pb-12 text-center border-t border-cream-dark dark:border-gray-800 text-xs text-slate-muted dark:text-gray-500">
+            <div className="flex justify-center items-center gap-2 mb-2 font-quran text-sm text-slate dark:text-gray-300">
+              <span>"وَنَفْسٍ وَمَا سَوَّاهَا • فَأَلْهَمَهَا فُجُورَهَا وَتَقْوَاهَا • قَدْ أَفْلَحَ مَن زَكَّاهَا"</span>
+            </div>
+            <p>مُحاسبة — صُمم ليكون رفيقاً لقلبك على طريق الاستقامة وحسن الخاتمة</p>
+            <div className="flex justify-center gap-4 mt-3 text-[11px]">
+              <button
+                onClick={() => {
+                  if (confirm('هل تريد تصفير مدخلات اليوم للبدء من جديد؟')) {
+                    localStorage.clear();
+                    window.location.reload();
+                  }
+                }}
+                className="text-red-500 hover:underline"
+              >
+                تصفير بيانات اليوم ⟲
+              </button>
+              <span>•</span>
+              <a href="https://github.com/mohamedjs/muhasabah" target="_blank" className="text-sage hover:underline">
+                مستودع المشروع على GitHub
+              </a>
+            </div>
+          </footer>
+
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
